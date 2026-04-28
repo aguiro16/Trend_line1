@@ -10,9 +10,9 @@ from zoneinfo import ZoneInfo
 
 log = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT  = os.environ["TELEGRAM_CHAT_ID"]
-ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
+ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
 SIGNAL_LOG     = "signals_log.csv"
 ACTIVE_LOG     = "active_signals.json"
 IMPROVE_LOG    = "improvement_history.json"
@@ -238,6 +238,11 @@ def save_improvement(analysis_text, losing_count, week_str):
 
 # ── Main improvement function ─────────────────────────────────────────────────
 def run_improvement_analysis():
+    global TELEGRAM_TOKEN, TELEGRAM_CHAT, ANTHROPIC_KEY
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    TELEGRAM_CHAT  = os.environ.get("TELEGRAM_CHAT_ID", "")
+    ANTHROPIC_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+
     log.info("=== Starting weekly improvement analysis ===")
 
     if not os.path.exists(ACTIVE_LOG):
