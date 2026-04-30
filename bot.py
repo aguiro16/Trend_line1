@@ -25,10 +25,10 @@ TELEGRAM_CHAT   = os.environ["TELEGRAM_CHAT_ID"]
 SCAN_INTERVAL   = 4 * 3600
 SIGNAL_COOLDOWN = 8 * 3600
 TOP_N           = 60
-MIN_VOLUME_24H  = 200_000_000
-MIN_CHANGE_24H  = 3.0
+MIN_VOLUME_24H  = 100_000_000
+MIN_CHANGE_24H  = 1.5
 ADX_TREND_MIN   = 25
-ADX_FILTER_MIN  = 20
+ADX_FILTER_MIN  = 15
 OTE_LOW         = 0.618
 OTE_HIGH        = 0.786
 STABLES         = {"USDT","BUSD","USDC","DAI","TUSD","FDUSD","USDP","USDD"}
@@ -520,15 +520,11 @@ def build_weekly_report():
 def report_scheduler():
     while True:
         now = datetime.now(KSA)
-
-        # Daily at 11:00 KSA
         if now.hour == 11 and now.minute == 0:
             try:
                 build_daily_report()
             except Exception as e:
                 log.error(f"Daily report error: {e}")
-
-        # Weekly Saturday 11:00 KSA
         if now.weekday() == 5 and now.hour == 11 and now.minute == 0:
             try:
                 build_weekly_report()
@@ -536,7 +532,6 @@ def report_scheduler():
                 run_improvement_analysis()
             except Exception as e:
                 log.error(f"Weekly report/improvement error: {e}")
-
         time.sleep(60)
 
 # ── Main scan ─────────────────────────────────────────────────────────────────
