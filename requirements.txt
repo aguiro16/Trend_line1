@@ -1,0 +1,5 @@
+python-binance==1.0.19
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.13.0
+requests==2.31.0
