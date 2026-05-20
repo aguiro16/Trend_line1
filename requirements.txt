@@ -1,6 +1,0 @@
-requests
-pandas
-numpy
-apscheduler
-pytz
-anthropic
