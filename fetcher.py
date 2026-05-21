@@ -78,3 +78,40 @@ def get_current_price(symbol: str) -> float | None:
     except BinanceAPIException as e:
         log.warning(f"get_current_price {symbol}: {e}")
         return None
+
+
+def fetch_1h_confirmation(symbol: str, breakout_level: float) -> float | None:
+    """
+    بعد كسر القناة على 1D/3D، نفحص شمعات 1H:
+    نبحث عن أول شمعة 1H مكتملة أغلقت فوق مستوى الكسر.
+    يرجع سعر الإغلاق (نقطة الدخول الفعلية) أو None إذا لم يتأكد.
+    """
+    try:
+        raw = client.get_klines(
+            symbol=symbol,
+            interval=Client.KLINE_INTERVAL_1HOUR,
+            limit=48,
+        )
+        if not raw:
+            return None
+
+        df = pd.DataFrame(raw, columns=[
+            "time","open","high","low","close","volume",
+            "close_time","qav","trades","tbbav","tbqav","ignore"
+        ])
+        df = df.astype({"open": float, "close": float, "volume": float})
+        df["time"] = pd.to_datetime(df["time"], unit="ms")
+
+        completed = df.iloc[:-1]
+
+        confirmed = completed[completed["close"] > breakout_level]
+        if confirmed.empty:
+            return None
+
+        entry_price = float(confirmed.iloc[-1]["close"])
+        log.info(f"{symbol} 1H تأكيد عند {entry_price} (فوق {breakout_level})")
+        return entry_price
+
+    except BinanceAPIException as e:
+        log.warning(f"fetch_1h_confirmation {symbol}: {e}")
+        return None
