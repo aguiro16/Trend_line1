@@ -81,11 +81,6 @@ def get_current_price(symbol: str) -> float | None:
 
 
 def fetch_1h_confirmation(symbol: str, breakout_level: float) -> float | None:
-    """
-    بعد كسر القناة على 1D/3D، نفحص شمعات 1H:
-    نبحث عن أول شمعة 1H مكتملة أغلقت فوق مستوى الكسر.
-    يرجع سعر الإغلاق (نقطة الدخول الفعلية) أو None إذا لم يتأكد.
-    """
     try:
         raw = client.get_klines(
             symbol=symbol,
@@ -103,7 +98,6 @@ def fetch_1h_confirmation(symbol: str, breakout_level: float) -> float | None:
         df["time"] = pd.to_datetime(df["time"], unit="ms")
 
         completed = df.iloc[:-1]
-
         confirmed = completed[completed["close"] > breakout_level]
         if confirmed.empty:
             return None
@@ -115,3 +109,69 @@ def fetch_1h_confirmation(symbol: str, breakout_level: float) -> float | None:
     except BinanceAPIException as e:
         log.warning(f"fetch_1h_confirmation {symbol}: {e}")
         return None
+
+
+def get_volume_spike_pairs(
+    vol_multiplier: float = 3.0,
+    min_vol_usdt: float = 500_000,
+) -> list[str]:
+    """
+    يرجع الأزواج التي انفجر حجمها خلال آخر ساعة:
+    حجم آخر ساعة > 3x متوسط الساعة الطبيعية
+    """
+    try:
+        tickers  = client.get_ticker()
+        EXCLUDED = ["UP", "DOWN", "BULL", "BEAR", "TUSD", "BUSD", "USDC"]
+
+        usdt = [
+            t for t in tickers
+            if t["symbol"].endswith("USDT")
+            and not any(s in t["symbol"] for s in EXCLUDED)
+        ]
+
+        spike_pairs = []
+
+        for t in usdt:
+            try:
+                symbol    = t["symbol"]
+                vol_24h   = float(t["quoteVolume"])
+                price_chg = abs(float(t.get("priceChangePercent", 0)))
+
+                if vol_24h < min_vol_usdt:
+                    continue
+
+                raw = client.get_klines(
+                    symbol=symbol,
+                    interval=Client.KLINE_INTERVAL_1HOUR,
+                    limit=25,
+                )
+                if not raw or len(raw) < 10:
+                    continue
+
+                df = pd.DataFrame(raw, columns=[
+                    "time","open","high","low","close","volume",
+                    "close_time","qav","trades","tbbav","tbqav","ignore"
+                ])
+                df = df.astype({"volume": float, "close": float,
+                                "open": float, "qav": float})
+
+                last_vol = float(df.iloc[-2]["qav"])
+                avg_vol  = df["qav"].iloc[-22:-2].mean()
+
+                if avg_vol == 0:
+                    continue
+
+                ratio = last_vol / avg_vol
+
+                if ratio >= vol_multiplier and price_chg >= 10:
+                    spike_pairs.append(symbol)
+                    log.info(f"⚡ {symbol}: حجم x{ratio:.1f} | تغير {price_chg:.1f}%")
+
+            except Exception:
+                continue
+
+        return spike_pairs
+
+    except BinanceAPIException as e:
+        log.error(f"get_volume_spike_pairs error: {e}")
+        return []
