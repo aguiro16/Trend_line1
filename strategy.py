@@ -14,7 +14,8 @@ MIN_CHANNEL_CANDLES  = 10
 MIN_TOUCHES          = 2
 VOLUME_MULTIPLIER    = 1.5
 MIN_RR               = 2.0
-MAX_SL_PCT           = 0.25
+MAX_SL_PCT           = 0.20
+MIN_TP_SPACING       = 0.03
 
 
 def find_pivots(series: pd.Series, window: int = 3):
@@ -121,9 +122,11 @@ def check_breakout(df: pd.DataFrame, ch: dict) -> bool:
 def calculate_targets(df: pd.DataFrame, ch: dict) -> dict | None:
     prev_idx = len(df) - 2
     entry    = float(df.iloc[prev_idx]["close"])
-    sl_line  = line_val(ch["l_slope"], ch["l_intercept"], prev_idx)
-    sl       = min(sl_line, entry * (1 - MAX_SL_PCT))
-    sl       = max(sl, entry * 0.70)
+
+    sl_line = line_val(ch["l_slope"], ch["l_intercept"], prev_idx)
+    sl      = max(sl_line, entry * (1 - MAX_SL_PCT))
+    if sl >= entry:
+        return None
 
     start  = ch["channel_start"]
     pre_df = df.iloc[:start]
@@ -134,22 +137,38 @@ def calculate_targets(df: pd.DataFrame, ch: dict) -> dict | None:
     else:
         targets = []
 
-    base = entry
+    base = targets[-1] if targets else entry
     while len(targets) < 4:
         base = base * 1.30
         targets.append(round(base, 8))
 
-    rr = (targets[0] - entry) / (entry - sl + 1e-12)
+    clean_targets = []
+    last = entry
+    for t in sorted(targets):
+        if t > last * (1 + MIN_TP_SPACING):
+            clean_targets.append(t)
+            last = t
+        if len(clean_targets) == 4:
+            break
+
+    if len(clean_targets) < 4:
+        clean_targets = []
+        base = entry
+        for _ in range(4):
+            base = base * 1.30
+            clean_targets.append(round(base, 8))
+
+    rr = (clean_targets[0] - entry) / (entry - sl + 1e-12)
     if rr < MIN_RR:
         return None
 
     return {
         "entry": round(entry, 8),
         "sl":    round(sl,    8),
-        "tp1":   round(targets[0], 8),
-        "tp2":   round(targets[1], 8),
-        "tp3":   round(targets[2], 8),
-        "tp4":   round(targets[3], 8),
+        "tp1":   round(clean_targets[0], 8),
+        "tp2":   round(clean_targets[1], 8),
+        "tp3":   round(clean_targets[2], 8),
+        "tp4":   round(clean_targets[3], 8),
     }
 
 
