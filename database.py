@@ -3,7 +3,7 @@ database.py — إدارة قاعدة البيانات SQLite
 """
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 DB_PATH = os.getenv("DB_PATH", "signals.db")
 
@@ -110,7 +110,6 @@ def get_signals_today() -> list:
 
 
 def get_signals_this_week() -> list:
-    from datetime import timedelta
     week_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
     conn = get_conn()
     rows = conn.execute(
@@ -122,10 +121,13 @@ def get_signals_this_week() -> list:
 
 
 def signal_exists(symbol: str, timeframe: str) -> bool:
+    cutoff = (datetime.utcnow() - timedelta(hours=24)).isoformat()
     conn = get_conn()
     row  = conn.execute(
-        "SELECT id FROM signals WHERE symbol=? AND timeframe=? AND status='OPEN'",
-        (symbol, timeframe)
+        """SELECT id FROM signals
+           WHERE symbol=? AND timeframe=?
+           AND (status='OPEN' OR created_at >= ?)""",
+        (symbol, timeframe, cutoff)
     ).fetchone()
     conn.close()
     return row is not None
