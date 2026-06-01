@@ -19,11 +19,11 @@ TF_MAP = {
     "1d": Client.KLINE_INTERVAL_1DAY,
 }
 
-TOP_N            = int(os.getenv("TOP_PAIRS", "60"))
-VOLUME_SPIKE_PCT = float(os.getenv("VOLUME_SPIKE_PCT", "200"))
+TOP_N = int(os.getenv("TOP_PAIRS", "60"))
 
 
 def get_top_pairs(n: int = TOP_N) -> list[str]:
+    """أفضل N زوج بالحجم + أي زوج تحرك 15%+ مع حجم كافٍ"""
     try:
         tickers  = client.get_ticker()
         EXCLUDED = ["UP", "DOWN", "BULL", "BEAR", "TUSD", "BUSD", "USDC"]
@@ -112,64 +112,50 @@ def fetch_1h_confirmation(symbol: str, breakout_level: float) -> float | None:
 
 
 def get_volume_spike_pairs(
-    vol_multiplier: float = 3.0,
-    min_vol_usdt: float = 500_000,
+    price_chg_threshold: float = 10.0,
+    min_vol_usdt: float = 1_000_000,
+    min_trades_k: float = 5000,
 ) -> list[str]:
     """
-    يرجع الأزواج التي انفجر حجمها خلال آخر ساعة:
-    حجم آخر ساعة > 3x متوسط الساعة الطبيعية
+    كشف سريع بـ call واحد فقط — بدون جلب بيانات إضافية.
+    يستخدم ticker الموجود لاكتشاف انفجار الحجم والسعر.
+
+    معايير الاختيار:
+    - تغير السعر > 10% في 24H
+    - حجم USDT > 1M
+    - عدد الصفقات > 5000
     """
     try:
         tickers  = client.get_ticker()
         EXCLUDED = ["UP", "DOWN", "BULL", "BEAR", "TUSD", "BUSD", "USDC"]
 
-        usdt = [
-            t for t in tickers
-            if t["symbol"].endswith("USDT")
-            and not any(s in t["symbol"] for s in EXCLUDED)
-        ]
-
         spike_pairs = []
 
-        for t in usdt:
+        for t in tickers:
             try:
-                symbol    = t["symbol"]
-                vol_24h   = float(t["quoteVolume"])
+                symbol = t["symbol"]
+                if not symbol.endswith("USDT"):
+                    continue
+                if any(s in symbol for s in EXCLUDED):
+                    continue
+
+                vol_24h   = float(t.get("quoteVolume", 0))
                 price_chg = abs(float(t.get("priceChangePercent", 0)))
+                trades    = float(t.get("count", 0))
 
-                if vol_24h < min_vol_usdt:
-                    continue
-
-                raw = client.get_klines(
-                    symbol=symbol,
-                    interval=Client.KLINE_INTERVAL_1HOUR,
-                    limit=25,
-                )
-                if not raw or len(raw) < 10:
-                    continue
-
-                df = pd.DataFrame(raw, columns=[
-                    "time","open","high","low","close","volume",
-                    "close_time","qav","trades","tbbav","tbqav","ignore"
-                ])
-                df = df.astype({"volume": float, "close": float,
-                                "open": float, "qav": float})
-
-                last_vol = float(df.iloc[-2]["qav"])
-                avg_vol  = df["qav"].iloc[-22:-2].mean()
-
-                if avg_vol == 0:
-                    continue
-
-                ratio = last_vol / avg_vol
-
-                if ratio >= vol_multiplier and price_chg >= 10:
+                if (price_chg >= price_chg_threshold
+                        and vol_24h >= min_vol_usdt
+                        and trades >= min_trades_k):
                     spike_pairs.append(symbol)
-                    log.info(f"⚡ {symbol}: حجم x{ratio:.1f} | تغير {price_chg:.1f}%")
+                    log.info(
+                        f"⚡ {symbol}: تغير {price_chg:.1f}% | "
+                        f"حجم {vol_24h/1e6:.1f}M | صفقات {int(trades):,}"
+                    )
 
-            except Exception:
+            except (ValueError, TypeError):
                 continue
 
+        log.info(f"⚡ إجمالي أزواج انفجار الحجم: {len(spike_pairs)}")
         return spike_pairs
 
     except BinanceAPIException as e:
